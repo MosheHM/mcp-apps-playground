@@ -118,7 +118,7 @@ export const ChatInterface: React.FC = () => {
     };
   };
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSendMessage();
@@ -319,7 +319,7 @@ export const ChatInterface: React.FC = () => {
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            onKeyPress={handleKeyPress}
+            onKeyDown={handleKeyDown}
             placeholder="Ask for a counter, form, or say hello..."
             disabled={isProcessing}
             style={{
