@@ -51,14 +51,39 @@ const Demo: React.FC = () => {
           maxWidth: '1200px',
           margin: '0 auto',
         }}>
-          <h1 style={{
-            fontSize: '28px',
-            fontWeight: 700,
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
             marginBottom: '8px',
-            color: '#1f2937',
           }}>
-            MCP Apps Playground
-          </h1>
+            <h1 style={{
+              fontSize: '28px',
+              fontWeight: 700,
+              color: '#1f2937',
+              margin: 0,
+            }}>
+              MCP Apps Playground
+            </h1>
+            <a
+              href="/chat.html"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '10px 20px',
+                fontSize: '14px',
+                fontWeight: 600,
+                color: 'white',
+                backgroundColor: '#10b981',
+                textDecoration: 'none',
+                borderRadius: '8px',
+                boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
+              }}
+            >
+              💬 Try Chat Interface
+            </a>
+          </div>
           <p style={{
             fontSize: '14px',
             color: '#6b7280',

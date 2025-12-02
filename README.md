@@ -144,7 +144,12 @@ npm install
 npm run dev
 ```
 
-Visit `http://localhost:3000` to see the playground.
+Visit `http://localhost:3000` to see the playground, or `http://localhost:3000/chat.html` for the chat interface.
+
+### Two Ways to Experience MCP Apps
+
+1. **Playground Mode** (`/`) - Select and test individual apps with direct controls
+2. **Chat Interface** (`/chat.html`) - See apps embedded in a conversational context
 
 ### Project Structure
 
@@ -157,6 +162,9 @@ mcp-apps-playground/
 │   │   └── AppHost.tsx            # Host component
 │   ├── bridge/
 │   │   └── AppBridge.ts           # Communication layer
+│   ├── chat/
+│   │   ├── ChatInterface.tsx      # Chat UI with embedded apps
+│   │   └── chat-main.tsx          # Chat entry point
 │   ├── types/
 │   │   └── index.ts               # TypeScript types
 │   └── main.tsx                   # Demo application
@@ -167,7 +175,8 @@ mcp-apps-playground/
 │       └── FormApp.tsx            # Form submission
 ├── docs/
 │   └── ARCHITECTURE.md            # Detailed architecture
-├── index.html                     # Main entry point
+├── index.html                     # Playground entry point
+├── chat.html                      # Chat interface entry
 ├── hello.html                     # Hello app entry
 ├── counter.html                   # Counter app entry
 ├── form.html                      # Form app entry
@@ -175,6 +184,23 @@ mcp-apps-playground/
 ```
 
 ## Examples
+
+### Chat Interface
+
+**NEW!** Experience MCP Apps in a conversational context at `/chat.html`
+
+The chat interface demonstrates how MCP Apps can be embedded in chat conversations, similar to how an AI assistant would return interactive components:
+
+- **Natural language interaction**: Ask for a counter, form, or just say hello
+- **Apps embedded in messages**: Each app appears as part of the conversation flow
+- **Multiple apps in one conversation**: Create several apps and interact with them all
+- **Quick suggestions**: Click suggested prompts to see instant responses
+
+**Try it**: 
+- Visit `/chat.html`
+- Type "Create a counter" or click a suggestion
+- Interact with the embedded app
+- Ask for more apps to see multiple instances in the conversation
 
 ### 1. Hello World App
 
