@@ -108,14 +108,9 @@ export const AppHost: React.FC<AppHostProps> = ({
         return { success: true };
       });
 
-      // Listen for notifications from the app
-      bridge.onNotification('*', (params) => {
-        console.log('[Host] Received notification:', params);
-        if (onNotification) {
-          // Extract method from the notification context if available
-          onNotification('notification', params);
-        }
-      });
+      // Note: For a production app, you would register specific notification handlers
+      // For this playground, apps can notify the host using specific methods
+      // Example: bridge.onNotification('counter.changed', (params) => { ... })
 
       setIsReady(true);
 

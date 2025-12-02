@@ -216,6 +216,9 @@ export class AppBridge implements IAppBridge {
 
   /**
    * Register a handler for incoming requests
+   * 
+   * Note: Only one handler per method is supported in this simple implementation.
+   * Registering a new handler for the same method will replace the previous one.
    */
   public onRequest(method: string, handler: RequestHandler): void {
     this.requestHandlers.set(method, handler);
@@ -223,6 +226,9 @@ export class AppBridge implements IAppBridge {
 
   /**
    * Register a handler for incoming notifications
+   * 
+   * Note: Only one handler per method is supported in this simple implementation.
+   * Registering a new handler for the same method will replace the previous one.
    */
   public onNotification(method: string, handler: NotificationHandler): void {
     this.notificationHandlers.set(method, handler);
