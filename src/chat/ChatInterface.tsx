@@ -29,7 +29,7 @@ export const ChatInterface: React.FC = () => {
     {
       id: '1',
       role: 'assistant',
-      content: 'Hello! I can help you with interactive tasks. Try asking me to create a counter, a form, or just say hello!',
+      content: "Hello! I'm an AI-powered MCP server that can return interactive apps as part of my responses. Try asking me to create a counter, a form, or just say hello!\n\nI intelligently decide when to return an interactive component based on your request.",
       timestamp: new Date(),
     },
   ]);
@@ -43,7 +43,7 @@ export const ChatInterface: React.FC = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     if (!input.trim() || isProcessing) return;
 
     const userMessage: Message = {
@@ -54,68 +54,51 @@ export const ChatInterface: React.FC = () => {
     };
 
     setMessages(prev => [...prev, userMessage]);
+    const currentInput = input;
     setInput('');
     setIsProcessing(true);
 
-    // Simulate processing and determine response
-    setTimeout(() => {
-      const response = generateResponse(input.toLowerCase());
-      setMessages(prev => [...prev, response]);
+    try {
+      // Call the backend server to get AI-powered response
+      const response = await fetch('http://localhost:3001/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ message: currentInput }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Server error');
+      }
+
+      const data = await response.json();
+
+      const assistantMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: data.message,
+        timestamp: new Date(data.timestamp),
+        app: data.app || undefined,
+      };
+
+      setMessages(prev => [...prev, assistantMessage]);
+    } catch (error) {
+      console.error('Failed to get response:', error);
+      
+      // Fallback response if server is unavailable
+      const errorMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: '⚠️ Server connection failed. Please make sure the backend server is running with `npm run dev:server`.\n\nFor now, the chat interface is running in demo mode.',
+        timestamp: new Date(),
+      };
+
+      setMessages(prev => [...prev, errorMessage]);
+    } finally {
       setIsProcessing(false);
       inputRef.current?.focus();
-    }, 500);
-  };
-
-  const generateResponse = (userInput: string): Message => {
-    const baseResponse: Message = {
-      id: (Date.now() + 1).toString(),
-      role: 'assistant',
-      content: '',
-      timestamp: new Date(),
-    };
-
-    // Match user intent and return appropriate response with app
-    if (userInput.includes('counter') || userInput.includes('count')) {
-      return {
-        ...baseResponse,
-        content: 'Here\'s an interactive counter for you! You can increment, decrement, or reset the value.',
-        app: {
-          url: '/counter.html',
-          title: 'Interactive Counter',
-          description: 'A stateful counter with bidirectional communication',
-        },
-      };
     }
-
-    if (userInput.includes('form') || userInput.includes('submit') || userInput.includes('data')) {
-      return {
-        ...baseResponse,
-        content: 'I\'ve created a form for you to fill out. Submit it when you\'re done!',
-        app: {
-          url: '/form.html',
-          title: 'Form Submission',
-          description: 'A form that validates input and submits data',
-        },
-      };
-    }
-
-    if (userInput.includes('hello') || userInput.includes('hi') || userInput.includes('start')) {
-      return {
-        ...baseResponse,
-        content: 'Let me show you a simple example of how MCP Apps work!',
-        app: {
-          url: '/hello.html',
-          title: 'Hello World',
-          description: 'A minimal MCP App example',
-        },
-      };
-    }
-
-    // Default response
-    return {
-      ...baseResponse,
-      content: 'I can create interactive apps for you! Try asking for:\n• A counter\n• A form\n• Or just say hello',
-    };
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {

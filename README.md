@@ -139,17 +139,34 @@ class MyApp implements App {
 ```bash
 # Install dependencies
 npm install
-
-# Start the development server
-npm run dev
 ```
 
-Visit `http://localhost:3000` to see the playground, or `http://localhost:3000/chat.html` for the chat interface.
+### Running the Project
+
+#### Option 1: Frontend Only (Demo Mode)
+```bash
+npm run dev
+```
+Visit `http://localhost:3000` for the playground or `/chat.html` for chat interface with simulated responses.
+
+#### Option 2: With AI-Powered Backend (Recommended)
+```bash
+# Terminal 1: Start the backend server
+npm run dev:server
+
+# Terminal 2: Start the frontend
+npm run dev
+
+# Or run both together:
+npm run dev:all
+```
+
+The backend server runs on `http://localhost:3001` and provides AI-powered responses that intelligently decide when to return MCP Apps.
 
 ### Two Ways to Experience MCP Apps
 
 1. **Playground Mode** (`/`) - Select and test individual apps with direct controls
-2. **Chat Interface** (`/chat.html`) - See apps embedded in a conversational context
+2. **Chat Interface** (`/chat.html`) - AI-powered chat that intelligently returns interactive apps based on your requests
 
 ### Project Structure
 
@@ -173,6 +190,9 @@ mcp-apps-playground/
 │   │   └── CounterApp.tsx         # Interactive counter
 │   └── form/
 │       └── FormApp.tsx            # Form submission
+├── server/
+│   ├── index.js                   # AI-powered backend server
+│   └── README.md                  # Server documentation
 ├── docs/
 │   └── ARCHITECTURE.md            # Detailed architecture
 ├── index.html                     # Playground entry point
@@ -185,22 +205,41 @@ mcp-apps-playground/
 
 ## Examples
 
-### Chat Interface
+### AI-Powered Chat Interface
 
-**NEW!** Experience MCP Apps in a conversational context at `/chat.html`
+**NEW!** Experience MCP Apps with an AI-powered backend at `/chat.html`
 
-The chat interface demonstrates how MCP Apps can be embedded in chat conversations, similar to how an AI assistant would return interactive components:
+The chat interface demonstrates how an MCP server with AI capabilities can intelligently decide when to return interactive MCP Apps:
 
-- **Natural language interaction**: Ask for a counter, form, or just say hello
-- **Apps embedded in messages**: Each app appears as part of the conversation flow
-- **Multiple apps in one conversation**: Create several apps and interact with them all
-- **Quick suggestions**: Click suggested prompts to see instant responses
+#### Features
+- **AI Decision Engine**: Backend server analyzes your message and decides if an app would be helpful
+- **Natural language interaction**: Simply describe what you need in plain English
+- **Smart app selection**: The AI returns the most appropriate app (counter, form, or demo)
+- **Conversation context**: The server maintains conversation history for better responses
+- **Multiple apps in one chat**: Create and interact with several apps simultaneously
+
+#### How It Works
+
+```
+User: "I need to track some numbers"
+  ↓
+AI Server analyzes intent
+  ↓
+Returns: Counter App + explanatory text
+  ↓
+App rendered in chat message
+```
 
 **Try it**: 
+- Start the backend server: `npm run dev:server`
 - Visit `/chat.html`
-- Type "Create a counter" or click a suggestion
-- Interact with the embedded app
-- Ask for more apps to see multiple instances in the conversation
+- Type natural language requests like:
+  - "Create a counter for me"
+  - "I need a form to collect user data"
+  - "Show me how MCP Apps work"
+- The AI will intelligently return the appropriate interactive component
+
+**Technical Note**: The current implementation uses smart pattern matching that can be easily upgraded to use GPT-4, Claude, or local LLMs. See `server/README.md` for integration details.
 
 ### 1. Hello World App
 
