@@ -38,7 +38,7 @@ interface AppHostProps extends AppHostConfig {
  */
 export const AppHost: React.FC<AppHostProps> = ({
   appUrl,
-  sandbox = 'allow-scripts allow-same-origin',
+  sandbox = 'allow-scripts allow-same-origin allow-forms',
   title = 'MCP App',
   width = '100%',
   height = '400px',
@@ -78,10 +78,10 @@ export const AppHost: React.FC<AppHostProps> = ({
       bridge.onRequest(HostMethods.SHOW_NOTIFICATION, async (params) => {
         const { message, type = 'info' } = params as { message: string; type?: string };
         console.log(`[Host] Notification (${type}):`, message);
-        
+
         // In a real application, you'd show a proper notification UI
         alert(`${type.toUpperCase()}: ${message}`);
-        
+
         return { success: true };
       });
 
@@ -89,7 +89,7 @@ export const AppHost: React.FC<AppHostProps> = ({
       bridge.onRequest(HostMethods.EXECUTE_ACTION, async (params) => {
         const { action, data } = params as { action: string; data?: unknown };
         console.log(`[Host] Executing action:`, action, data);
-        
+
         // Handle the action (this is application-specific)
         return { success: true, action, data };
       });
@@ -154,7 +154,7 @@ export const AppHost: React.FC<AppHostProps> = ({
           {isReady ? '● Ready' : '○ Loading...'}
         </span>
       </div>
-      
+
       <iframe
         ref={iframeRef}
         src={appUrl}
@@ -167,7 +167,7 @@ export const AppHost: React.FC<AppHostProps> = ({
           borderTop: 'none',
         }}
       />
-      
+
       {logs.length > 0 && (
         <details style={{
           marginTop: '8px',
