@@ -11,83 +11,133 @@
  * showcasing the bidirectional nature of the AppBridge.
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
-import { AppBridge } from '../../src/bridge/AppBridge';
-import { App, AppMethods, HostMethods } from '../../src/types';
+import { App } from '../../src/lib/ext-apps/app';
+import { PostMessageTransport } from '../../src/lib/ext-apps/message-transport';
+import { AppMethods, HostMethods } from '../../src/types';
+import { z } from 'zod';
 
 /**
  * CounterApp Component
  */
 const CounterApp: React.FC = () => {
-  const [bridge, setBridge] = useState<AppBridge | null>(null);
+  const [app, setApp] = useState<App | null>(null);
   const [count, setCount] = useState(0);
   const [history, setHistory] = useState<string[]>([]);
 
+  // Use ref to access current count in handlers without closure staleness
+  const countRef = useRef(count);
   useEffect(() => {
-    // Create the AppBridge
-    const appBridge = new AppBridge(window.parent, '*');
-    setBridge(appBridge);
+    countRef.current = count;
+  }, [count]);
+
+  useEffect(() => {
+    // Create the App instance
+    const mcpApp = new App(
+      { name: "Counter App", version: "1.0.0" },
+      { capabilities: { tools: {}, resources: {} } }
+    );
 
     // Register handlers for host requests
-    
+
     // Handle initialization
-    appBridge.onRequest(AppMethods.INITIALIZE, async (params) => {
-      const { initialCount = 0 } = params as { initialCount?: number };
+    const InitializeSchema = z.object({
+      method: z.literal(AppMethods.INITIALIZE),
+      params: z.object({
+        initialCount: z.number().optional()
+      }).optional()
+    });
+
+    mcpApp.setRequestHandler(InitializeSchema, async (request) => {
+      const initialCount = request.params?.initialCount ?? 0;
       setCount(initialCount);
       addToHistory(`Initialized with count: ${initialCount}`);
       return { success: true, count: initialCount };
     });
 
     // Handle data from host
-    appBridge.onRequest(AppMethods.SEND_DATA, async (params) => {
-      const { action, value } = params as { action: string; value?: number };
-      
+    const SendDataSchema = z.object({
+      method: z.literal(AppMethods.SEND_DATA),
+      params: z.object({
+        action: z.string(),
+        value: z.number().optional()
+      })
+    });
+
+    mcpApp.setRequestHandler(SendDataSchema, async (request) => {
+      const { action, value } = request.params;
+
       if (action === 'setCount' && typeof value === 'number') {
         setCount(value);
         addToHistory(`Host set count to: ${value}`);
         return { success: true, count: value };
       }
-      
+
       if (action === 'increment') {
+        const incrementValue = value || 1;
         setCount(prev => {
-          const newCount = prev + (value || 1);
-          addToHistory(`Host incremented by ${value || 1}`);
+          const newCount = prev + incrementValue;
+          addToHistory(`Host incremented by ${incrementValue}`);
           return newCount;
         });
         return { success: true };
       }
-      
+
       if (action === 'decrement') {
+        const decrementValue = value || 1;
         setCount(prev => {
-          const newCount = prev - (value || 1);
-          addToHistory(`Host decremented by ${value || 1}`);
+          const newCount = prev - decrementValue;
+          addToHistory(`Host decremented by ${decrementValue}`);
           return newCount;
         });
         return { success: true };
       }
-      
+
       return { success: false, error: 'Unknown action' };
     });
 
     // Handle action requests
-    appBridge.onRequest(AppMethods.PERFORM_ACTION, async (params) => {
-      const { action } = params as { action: string };
-      
+    const PerformActionSchema = z.object({
+      method: z.literal(AppMethods.PERFORM_ACTION),
+      params: z.object({
+        action: z.string()
+      })
+    });
+
+    mcpApp.setRequestHandler(PerformActionSchema, async (request) => {
+      const { action } = request.params;
+
       if (action === 'reset') {
         setCount(0);
         addToHistory('Host requested reset');
         return { success: true, count: 0 };
       }
-      
+
       return { success: false, error: 'Unknown action' };
     });
 
-    // Log initialization
-    appBridge.request(HostMethods.LOG, {
-      level: 'info',
-      message: 'CounterApp initialized',
-    }).catch(console.error);
+    // Connect to host
+    mcpApp.connect(new PostMessageTransport(window.parent, window))
+      .then(() => {
+        setApp(mcpApp);
+        // Log initialization
+        const LogSchema = z.object({
+          method: z.literal(HostMethods.LOG),
+          params: z.object({
+            level: z.string().optional(),
+            message: z.string()
+          })
+        });
+        return mcpApp.request({
+          method: HostMethods.LOG,
+          params: {
+            level: 'info',
+            message: 'CounterApp initialized',
+          }
+        }, LogSchema);
+      })
+      .catch(console.error);
 
     function addToHistory(message: string) {
       setHistory(prev => [
@@ -97,16 +147,20 @@ const CounterApp: React.FC = () => {
     }
 
     return () => {
-      appBridge.close();
+      mcpApp.close();
     };
   }, []);
 
-  // Notify host when count changes
+  // Notify host when count changes (using a custom notification if supported, or just log)
+  // The old AppBridge had .notify(). The new App has .notification().
   useEffect(() => {
-    if (bridge && count !== 0) {
-      bridge.notify('counter.changed', { count });
+    if (app && count !== 0) {
+      app.notification({
+        method: 'counter.changed',
+        params: { count }
+      }).catch(console.error);
     }
-  }, [count, bridge]);
+  }, [count, app]);
 
   const increment = async () => {
     const newCount = count + 1;
@@ -115,13 +169,23 @@ const CounterApp: React.FC = () => {
       ...prev.slice(-9),
       `${new Date().toLocaleTimeString()}: Incremented to ${newCount}`
     ]);
-    
+
     // Notify host of the change
-    if (bridge) {
-      await bridge.request(HostMethods.LOG, {
-        level: 'info',
-        message: `Counter incremented to ${newCount}`,
+    if (app) {
+      const LogSchema = z.object({
+        method: z.literal(HostMethods.LOG),
+        params: z.object({
+          level: z.string().optional(),
+          message: z.string()
+        })
       });
+      await app.request({
+        method: HostMethods.LOG,
+        params: {
+          level: 'info',
+          message: `Counter incremented to ${newCount}`,
+        }
+      }, LogSchema).catch(console.error);
     }
   };
 
@@ -132,12 +196,22 @@ const CounterApp: React.FC = () => {
       ...prev.slice(-9),
       `${new Date().toLocaleTimeString()}: Decremented to ${newCount}`
     ]);
-    
-    if (bridge) {
-      await bridge.request(HostMethods.LOG, {
-        level: 'info',
-        message: `Counter decremented to ${newCount}`,
+
+    if (app) {
+      const LogSchema = z.object({
+        method: z.literal(HostMethods.LOG),
+        params: z.object({
+          level: z.string().optional(),
+          message: z.string()
+        })
       });
+      await app.request({
+        method: HostMethods.LOG,
+        params: {
+          level: 'info',
+          message: `Counter decremented to ${newCount}`,
+        }
+      }, LogSchema).catch(console.error);
     }
   };
 
@@ -147,24 +221,44 @@ const CounterApp: React.FC = () => {
       ...prev.slice(-9),
       `${new Date().toLocaleTimeString()}: Reset to 0`
     ]);
-    
-    if (bridge) {
-      await bridge.request(HostMethods.SHOW_NOTIFICATION, {
-        message: 'Counter has been reset!',
-        type: 'info',
+
+    if (app) {
+      const ShowNotificationSchema = z.object({
+        method: z.literal(HostMethods.SHOW_NOTIFICATION),
+        params: z.object({
+          message: z.string(),
+          type: z.string().optional()
+        })
       });
+      await app.request({
+        method: HostMethods.SHOW_NOTIFICATION,
+        params: {
+          message: 'Counter has been reset!',
+          type: 'info',
+        }
+      }, ShowNotificationSchema).catch(console.error);
     }
   };
 
   const sendToHost = async () => {
-    if (!bridge) return;
-    
+    if (!app) return;
+
     try {
-      await bridge.request(HostMethods.EXECUTE_ACTION, {
-        action: 'saveCounter',
-        data: { count, timestamp: new Date().toISOString() },
+      const ExecuteActionSchema = z.object({
+        method: z.literal(HostMethods.EXECUTE_ACTION),
+        params: z.object({
+          action: z.string(),
+          data: z.unknown().optional()
+        })
       });
-      
+      await app.request({
+        method: HostMethods.EXECUTE_ACTION,
+        params: {
+          action: 'saveCounter',
+          data: { count, timestamp: new Date().toISOString() },
+        }
+      }, ExecuteActionSchema);
+
       setHistory(prev => [
         ...prev.slice(-9),
         `${new Date().toLocaleTimeString()}: Sent count to host`
@@ -189,7 +283,7 @@ const CounterApp: React.FC = () => {
       }}>
         🔢 Interactive Counter
       </h1>
-      
+
       <p style={{
         fontSize: '14px',
         color: '#6b7280',
@@ -215,7 +309,7 @@ const CounterApp: React.FC = () => {
         }}>
           {count}
         </div>
-        
+
         <div style={{
           display: 'flex',
           gap: '12px',
@@ -224,51 +318,51 @@ const CounterApp: React.FC = () => {
         }}>
           <button
             onClick={decrement}
-            disabled={!bridge}
+            disabled={!app}
             style={{
               padding: '12px 24px',
               fontSize: '18px',
               fontWeight: 600,
               color: 'white',
-              backgroundColor: bridge ? '#ef4444' : '#9ca3af',
+              backgroundColor: app ? '#ef4444' : '#9ca3af',
               border: 'none',
               borderRadius: '8px',
-              cursor: bridge ? 'pointer' : 'not-allowed',
+              cursor: app ? 'pointer' : 'not-allowed',
               minWidth: '60px',
             }}
           >
             −
           </button>
-          
+
           <button
             onClick={reset}
-            disabled={!bridge}
+            disabled={!app}
             style={{
               padding: '12px 24px',
               fontSize: '14px',
               fontWeight: 600,
-              color: bridge ? '#374151' : '#9ca3af',
-              backgroundColor: bridge ? '#f3f4f6' : '#e5e7eb',
-              border: bridge ? '2px solid #d1d5db' : '2px solid #e5e7eb',
+              color: app ? '#374151' : '#9ca3af',
+              backgroundColor: app ? '#f3f4f6' : '#e5e7eb',
+              border: app ? '2px solid #d1d5db' : '2px solid #e5e7eb',
               borderRadius: '8px',
-              cursor: bridge ? 'pointer' : 'not-allowed',
+              cursor: app ? 'pointer' : 'not-allowed',
             }}
           >
             Reset
           </button>
-          
+
           <button
             onClick={increment}
-            disabled={!bridge}
+            disabled={!app}
             style={{
               padding: '12px 24px',
               fontSize: '18px',
               fontWeight: 600,
               color: 'white',
-              backgroundColor: bridge ? '#10b981' : '#9ca3af',
+              backgroundColor: app ? '#10b981' : '#9ca3af',
               border: 'none',
               borderRadius: '8px',
-              cursor: bridge ? 'pointer' : 'not-allowed',
+              cursor: app ? 'pointer' : 'not-allowed',
               minWidth: '60px',
             }}
           >
@@ -279,17 +373,17 @@ const CounterApp: React.FC = () => {
 
       <button
         onClick={sendToHost}
-        disabled={!bridge}
+        disabled={!app}
         style={{
           width: '100%',
           padding: '12px',
           fontSize: '14px',
           fontWeight: 600,
           color: 'white',
-          backgroundColor: bridge ? '#8b5cf6' : '#9ca3af',
+          backgroundColor: app ? '#8b5cf6' : '#9ca3af',
           border: 'none',
           borderRadius: '8px',
-          cursor: bridge ? 'pointer' : 'not-allowed',
+          cursor: app ? 'pointer' : 'not-allowed',
           marginBottom: '24px',
         }}
       >
@@ -329,30 +423,8 @@ const CounterApp: React.FC = () => {
   );
 };
 
-/**
- * App class implementation
- */
-class CounterAppImpl implements App {
-  private bridge: AppBridge | null = null;
-
-  async onMount(bridge: AppBridge): Promise<void> {
-    this.bridge = bridge;
-    console.log('CounterApp mounted');
-  }
-
-  async onUnmount(): Promise<void> {
-    if (this.bridge) {
-      this.bridge.close();
-      this.bridge = null;
-    }
-    console.log('CounterApp unmounted');
-  }
-}
-
 // Bootstrap the app
 const root = document.getElementById('root');
 if (root) {
   createRoot(root).render(<CounterApp />);
 }
-
-export const app = new CounterAppImpl();

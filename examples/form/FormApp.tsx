@@ -13,8 +13,10 @@
 
 import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { AppBridge } from '../../src/bridge/AppBridge';
-import { App, AppMethods, HostMethods } from '../../src/types';
+import { App } from '../../src/lib/ext-apps/app';
+import { PostMessageTransport } from '../../src/lib/ext-apps/message-transport';
+import { AppMethods, HostMethods } from '../../src/types';
+import { z } from 'zod';
 
 interface FormData {
   name: string;
@@ -27,7 +29,7 @@ interface FormData {
  * FormApp Component
  */
 const FormApp: React.FC = () => {
-  const [bridge, setBridge] = useState<AppBridge | null>(null);
+  const [app, setApp] = useState<App | null>(null);
   const [formData, setFormData] = useState<FormData>({
     name: '',
     email: '',
@@ -39,15 +41,29 @@ const FormApp: React.FC = () => {
   const [submitStatus, setSubmitStatus] = useState<string>('');
 
   useEffect(() => {
-    // Create the AppBridge
-    const appBridge = new AppBridge(window.parent, '*');
-    setBridge(appBridge);
+    // Create the App instance
+    const mcpApp = new App(
+      { name: "Form App", version: "1.0.0" },
+      { capabilities: { tools: {}, resources: {} } }
+    );
 
     // Register handlers for host requests
-    
+
     // Handle pre-filling form data from host
-    appBridge.onRequest(AppMethods.SEND_DATA, async (params) => {
-      const { formData: hostFormData } = params as { formData?: Partial<FormData> };
+    const SendDataSchema = z.object({
+      method: z.literal(AppMethods.SEND_DATA),
+      params: z.object({
+        formData: z.object({
+          name: z.string().optional(),
+          email: z.string().optional(),
+          message: z.string().optional(),
+          priority: z.string().optional(),
+        }).optional()
+      })
+    });
+
+    mcpApp.setRequestHandler(SendDataSchema, async (request) => {
+      const { formData: hostFormData } = request.params;
       if (hostFormData) {
         setFormData(prev => ({ ...prev, ...hostFormData }));
         return { success: true, message: 'Form data updated' };
@@ -56,9 +72,16 @@ const FormApp: React.FC = () => {
     });
 
     // Handle reset request
-    appBridge.onRequest(AppMethods.PERFORM_ACTION, async (params) => {
-      const { action } = params as { action: string };
-      
+    const PerformActionSchema = z.object({
+      method: z.literal(AppMethods.PERFORM_ACTION),
+      params: z.object({
+        action: z.string()
+      })
+    });
+
+    mcpApp.setRequestHandler(PerformActionSchema, async (request) => {
+      const { action } = request.params;
+
       if (action === 'reset') {
         setFormData({
           name: '',
@@ -70,18 +93,34 @@ const FormApp: React.FC = () => {
         setSubmitStatus('');
         return { success: true, message: 'Form reset' };
       }
-      
+
       return { success: false, error: 'Unknown action' };
     });
 
-    // Log initialization
-    appBridge.request(HostMethods.LOG, {
-      level: 'info',
-      message: 'FormApp initialized',
-    }).catch(console.error);
+    // Connect to host
+    mcpApp.connect(new PostMessageTransport(window.parent, window))
+      .then(() => {
+        setApp(mcpApp);
+        // Log initialization
+        const LogSchema = z.object({
+          method: z.literal(HostMethods.LOG),
+          params: z.object({
+            level: z.string().optional(),
+            message: z.string()
+          })
+        });
+        return mcpApp.request({
+          method: HostMethods.LOG,
+          params: {
+            level: 'info',
+            message: 'FormApp initialized',
+          }
+        }, LogSchema);
+      })
+      .catch(console.error);
 
     return () => {
-      appBridge.close();
+      mcpApp.close();
     };
   }, []);
 
@@ -89,8 +128,8 @@ const FormApp: React.FC = () => {
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
   ) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
-    
+    setFormData(prev => ({ ...prev, [name]: value } as FormData));
+
     // Clear error for this field when user starts typing
     if (errors[name as keyof FormData]) {
       setErrors(prev => ({ ...prev, [name]: undefined }));
@@ -122,9 +161,9 @@ const FormApp: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!bridge) return;
-    
+
+    if (!app) return;
+
     if (!validateForm()) {
       setSubmitStatus('Please fix the errors above');
       return;
@@ -135,30 +174,60 @@ const FormApp: React.FC = () => {
 
     try {
       // Submit the form data to the host
-      const result = await bridge.request(HostMethods.EXECUTE_ACTION, {
-        action: 'submitForm',
-        data: {
-          ...formData,
-          timestamp: new Date().toISOString(),
-        },
+      const ExecuteActionSchema = z.object({
+        method: z.literal(HostMethods.EXECUTE_ACTION),
+        params: z.object({
+          action: z.string(),
+          data: z.unknown().optional()
+        })
       });
+      const result = await app.request({
+        method: HostMethods.EXECUTE_ACTION,
+        params: {
+          action: 'submitForm',
+          data: {
+            ...formData,
+            timestamp: new Date().toISOString(),
+          },
+        }
+      }, ExecuteActionSchema);
 
       console.log('Submit result:', result);
 
       // Show success notification
-      await bridge.request(HostMethods.SHOW_NOTIFICATION, {
-        message: 'Form submitted successfully!',
-        type: 'success',
+      const ShowNotificationSchema = z.object({
+        method: z.literal(HostMethods.SHOW_NOTIFICATION),
+        params: z.object({
+          message: z.string(),
+          type: z.string().optional()
+        })
       });
+      await app.request({
+        method: HostMethods.SHOW_NOTIFICATION,
+        params: {
+          message: 'Form submitted successfully!',
+          type: 'success',
+        }
+      }, ShowNotificationSchema);
 
       // Log the submission
-      await bridge.request(HostMethods.LOG, {
-        level: 'info',
-        message: `Form submitted: ${formData.name} (${formData.email})`,
+      const LogSchema = z.object({
+        method: z.literal(HostMethods.LOG),
+        params: z.object({
+          level: z.string().optional(),
+          message: z.string()
+        })
       });
+      await app.request({
+        method: HostMethods.LOG,
+        params: {
+          level: 'info',
+          message: `Form submitted: ${formData.name} (${formData.email})`,
+        }
+      }, LogSchema);
 
       setSubmitStatus('✓ Form submitted successfully!');
-      
+
       // Reset form after successful submission
       setTimeout(() => {
         setFormData({
@@ -172,11 +241,21 @@ const FormApp: React.FC = () => {
     } catch (error) {
       console.error('Failed to submit form:', error);
       setSubmitStatus('✗ Failed to submit form');
-      
-      await bridge.request(HostMethods.SHOW_NOTIFICATION, {
-        message: 'Failed to submit form. Please try again.',
-        type: 'error',
+
+      const ShowNotificationSchema = z.object({
+        method: z.literal(HostMethods.SHOW_NOTIFICATION),
+        params: z.object({
+          message: z.string(),
+          type: z.string().optional()
+        })
       });
+      await app.request({
+        method: HostMethods.SHOW_NOTIFICATION,
+        params: {
+          message: 'Failed to submit form. Please try again.',
+          type: 'error',
+        }
+      }, ShowNotificationSchema);
     } finally {
       setIsSubmitting(false);
     }
@@ -197,7 +276,7 @@ const FormApp: React.FC = () => {
       }}>
         📝 Form Submission
       </h1>
-      
+
       <p style={{
         fontSize: '14px',
         color: '#6b7280',
@@ -224,7 +303,7 @@ const FormApp: React.FC = () => {
             name="name"
             value={formData.name}
             onChange={handleChange}
-            disabled={!bridge}
+            disabled={!app}
             style={{
               width: '100%',
               padding: '10px 12px',
@@ -232,7 +311,7 @@ const FormApp: React.FC = () => {
               border: errors.name ? '2px solid #ef4444' : '1px solid #d1d5db',
               borderRadius: '6px',
               outline: 'none',
-              backgroundColor: bridge ? 'white' : '#f9fafb',
+              backgroundColor: app ? 'white' : '#f9fafb',
             }}
             placeholder="Enter your name"
           />
@@ -259,7 +338,7 @@ const FormApp: React.FC = () => {
             name="email"
             value={formData.email}
             onChange={handleChange}
-            disabled={!bridge}
+            disabled={!app}
             style={{
               width: '100%',
               padding: '10px 12px',
@@ -267,7 +346,7 @@ const FormApp: React.FC = () => {
               border: errors.email ? '2px solid #ef4444' : '1px solid #d1d5db',
               borderRadius: '6px',
               outline: 'none',
-              backgroundColor: bridge ? 'white' : '#f9fafb',
+              backgroundColor: app ? 'white' : '#f9fafb',
             }}
             placeholder="your.email@example.com"
           />
@@ -293,7 +372,7 @@ const FormApp: React.FC = () => {
             name="priority"
             value={formData.priority}
             onChange={handleChange}
-            disabled={!bridge}
+            disabled={!app}
             style={{
               width: '100%',
               padding: '10px 12px',
@@ -301,8 +380,8 @@ const FormApp: React.FC = () => {
               border: '1px solid #d1d5db',
               borderRadius: '6px',
               outline: 'none',
-              backgroundColor: bridge ? 'white' : '#f9fafb',
-              cursor: bridge ? 'pointer' : 'not-allowed',
+              backgroundColor: app ? 'white' : '#f9fafb',
+              cursor: app ? 'pointer' : 'not-allowed',
             }}
           >
             <option value="low">Low</option>
@@ -327,7 +406,7 @@ const FormApp: React.FC = () => {
             name="message"
             value={formData.message}
             onChange={handleChange}
-            disabled={!bridge}
+            disabled={!app}
             rows={5}
             style={{
               width: '100%',
@@ -336,7 +415,7 @@ const FormApp: React.FC = () => {
               border: errors.message ? '2px solid #ef4444' : '1px solid #d1d5db',
               borderRadius: '6px',
               outline: 'none',
-              backgroundColor: bridge ? 'white' : '#f9fafb',
+              backgroundColor: app ? 'white' : '#f9fafb',
               resize: 'vertical',
               fontFamily: 'inherit',
             }}
@@ -352,17 +431,17 @@ const FormApp: React.FC = () => {
         {/* Submit button */}
         <button
           type="submit"
-          disabled={!bridge || isSubmitting}
+          disabled={!app || isSubmitting}
           style={{
             width: '100%',
             padding: '12px',
             fontSize: '16px',
             fontWeight: 600,
             color: 'white',
-            backgroundColor: bridge && !isSubmitting ? '#3b82f6' : '#9ca3af',
+            backgroundColor: app && !isSubmitting ? '#3b82f6' : '#9ca3af',
             border: 'none',
             borderRadius: '8px',
-            cursor: bridge && !isSubmitting ? 'pointer' : 'not-allowed',
+            cursor: app && !isSubmitting ? 'pointer' : 'not-allowed',
           }}
         >
           {isSubmitting ? 'Submitting...' : 'Submit Form'}
@@ -373,10 +452,10 @@ const FormApp: React.FC = () => {
           <div style={{
             marginTop: '16px',
             padding: '12px',
-            backgroundColor: submitStatus.startsWith('✓') ? '#d1fae5' : 
-                           submitStatus.startsWith('✗') ? '#fee2e2' : '#fef3c7',
-            color: submitStatus.startsWith('✓') ? '#065f46' : 
-                   submitStatus.startsWith('✗') ? '#991b1b' : '#92400e',
+            backgroundColor: submitStatus.startsWith('✓') ? '#d1fae5' :
+              submitStatus.startsWith('✗') ? '#fee2e2' : '#fef3c7',
+            color: submitStatus.startsWith('✓') ? '#065f46' :
+              submitStatus.startsWith('✗') ? '#991b1b' : '#92400e',
             borderRadius: '6px',
             fontSize: '14px',
             textAlign: 'center',
@@ -389,30 +468,8 @@ const FormApp: React.FC = () => {
   );
 };
 
-/**
- * App class implementation
- */
-class FormAppImpl implements App {
-  private bridge: AppBridge | null = null;
-
-  async onMount(bridge: AppBridge): Promise<void> {
-    this.bridge = bridge;
-    console.log('FormApp mounted');
-  }
-
-  async onUnmount(): Promise<void> {
-    if (this.bridge) {
-      this.bridge.close();
-      this.bridge = null;
-    }
-    console.log('FormApp unmounted');
-  }
-}
-
 // Bootstrap the app
 const root = document.getElementById('root');
 if (root) {
   createRoot(root).render(<FormApp />);
 }
-
-export const app = new FormAppImpl();

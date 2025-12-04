@@ -12,48 +12,78 @@
 
 import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { AppBridge } from '../bridge/AppBridge';
-import { App, HostMethods } from '../types';
+import { App } from '../lib/ext-apps/app';
+import { PostMessageTransport } from '../lib/ext-apps/message-transport';
+import { HostMethods } from '../types';
+import { z } from 'zod';
 
 /**
  * HelloWorldApp Component
  */
 const HelloWorldApp: React.FC = () => {
-  const [bridge, setBridge] = useState<AppBridge | null>(null);
+  const [app, setApp] = useState<App | null>(null);
   const [messageCount, setMessageCount] = useState(0);
   const [status, setStatus] = useState('Initializing...');
 
   useEffect(() => {
-    // Create the AppBridge to communicate with the host
-    // The app connects to window.parent (the host's window)
-    const appBridge = new AppBridge(window.parent, '*');
-    
-    setBridge(appBridge);
-    setStatus('Connected to host');
+    // Create the App instance
+    const mcpApp = new App(
+      { name: "Hello World App", version: "1.0.0" },
+      { capabilities: { tools: {}, resources: {} } }
+    );
 
-    // Log that we're ready
-    appBridge.request(HostMethods.LOG, {
-      level: 'info',
-      message: 'HelloWorldApp initialized',
-    }).catch(err => {
-      console.error('Failed to log to host:', err);
-    });
+    // Connect to host
+    mcpApp.connect(new PostMessageTransport(window.parent, window))
+      .then(() => {
+        setApp(mcpApp);
+        setStatus('Connected to host');
+
+        // Log that we're ready
+        const LogSchema = z.object({
+          method: z.literal(HostMethods.LOG),
+          params: z.object({
+            level: z.string().optional(),
+            message: z.string()
+          })
+        });
+        return mcpApp.request({
+          method: HostMethods.LOG,
+          params: {
+            level: 'info',
+            message: 'HelloWorldApp initialized',
+          }
+        }, LogSchema);
+      })
+      .catch(err => {
+        console.error('Failed to connect/log to host:', err);
+        setStatus('Connection failed');
+      });
 
     // Cleanup on unmount
     return () => {
-      appBridge.close();
+      mcpApp.close();
     };
   }, []);
 
   const handleSendMessage = async () => {
-    if (!bridge) return;
+    if (!app) return;
 
     try {
       // Send a notification to the host
-      await bridge.request(HostMethods.SHOW_NOTIFICATION, {
-        message: `Hello from the app! Message #${messageCount + 1}`,
-        type: 'info',
+      const ShowNotificationSchema = z.object({
+        method: z.literal(HostMethods.SHOW_NOTIFICATION),
+        params: z.object({
+          message: z.string(),
+          type: z.string().optional()
+        })
       });
+      await app.request({
+        method: HostMethods.SHOW_NOTIFICATION,
+        params: {
+          message: `Hello from the app! Message #${messageCount + 1}`,
+          type: 'info',
+        }
+      }, ShowNotificationSchema);
 
       setMessageCount(prev => prev + 1);
       setStatus(`Sent ${messageCount + 1} message(s)`);
@@ -64,13 +94,23 @@ const HelloWorldApp: React.FC = () => {
   };
 
   const handleExecuteAction = async () => {
-    if (!bridge) return;
+    if (!app) return;
 
     try {
-      const result = await bridge.request(HostMethods.EXECUTE_ACTION, {
-        action: 'greet',
-        data: { name: 'MCP App User' },
+      const ExecuteActionSchema = z.object({
+        method: z.literal(HostMethods.EXECUTE_ACTION),
+        params: z.object({
+          action: z.string(),
+          data: z.unknown().optional()
+        })
       });
+      const result = await app.request({
+        method: HostMethods.EXECUTE_ACTION,
+        params: {
+          action: 'greet',
+          data: { name: 'MCP App User' },
+        }
+      }, ExecuteActionSchema);
 
       console.log('Action result:', result);
       setStatus('Action executed successfully');
@@ -95,7 +135,7 @@ const HelloWorldApp: React.FC = () => {
       }}>
         👋 Hello, MCP Apps!
       </h1>
-      
+
       <p style={{
         fontSize: '14px',
         color: '#6b7280',
@@ -122,16 +162,16 @@ const HelloWorldApp: React.FC = () => {
       }}>
         <button
           onClick={handleSendMessage}
-          disabled={!bridge}
+          disabled={!app}
           style={{
             padding: '10px 20px',
             fontSize: '14px',
             fontWeight: 600,
             color: 'white',
-            backgroundColor: bridge ? '#3b82f6' : '#9ca3af',
+            backgroundColor: app ? '#3b82f6' : '#9ca3af',
             border: 'none',
             borderRadius: '6px',
-            cursor: bridge ? 'pointer' : 'not-allowed',
+            cursor: app ? 'pointer' : 'not-allowed',
           }}
         >
           Send Message to Host
@@ -139,16 +179,16 @@ const HelloWorldApp: React.FC = () => {
 
         <button
           onClick={handleExecuteAction}
-          disabled={!bridge}
+          disabled={!app}
           style={{
             padding: '10px 20px',
             fontSize: '14px',
             fontWeight: 600,
             color: 'white',
-            backgroundColor: bridge ? '#10b981' : '#9ca3af',
+            backgroundColor: app ? '#10b981' : '#9ca3af',
             border: 'none',
             borderRadius: '6px',
-            cursor: bridge ? 'pointer' : 'not-allowed',
+            cursor: app ? 'pointer' : 'not-allowed',
           }}
         >
           Execute Action
@@ -176,31 +216,8 @@ const HelloWorldApp: React.FC = () => {
   );
 };
 
-/**
- * App class implementation for lifecycle management
- */
-class HelloWorldAppImpl implements App {
-  private bridge: AppBridge | null = null;
-
-  async onMount(bridge: AppBridge): Promise<void> {
-    this.bridge = bridge;
-    console.log('HelloWorldApp mounted with bridge');
-  }
-
-  async onUnmount(): Promise<void> {
-    if (this.bridge) {
-      this.bridge.close();
-      this.bridge = null;
-    }
-    console.log('HelloWorldApp unmounted');
-  }
-}
-
 // Bootstrap the app
 const root = document.getElementById('root');
 if (root) {
   createRoot(root).render(<HelloWorldApp />);
 }
-
-// Export the app instance for use with lifecycle management
-export const app = new HelloWorldAppImpl();
